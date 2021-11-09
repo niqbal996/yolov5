@@ -126,6 +126,28 @@ def export_coreml(model, im, file, prefix=colorstr('CoreML:')):
 
     return ct_model
 
+def export_engine(onnx_file_path):
+    import pycuda.driver as cuda
+    import pycuda.autoinit
+    import tensorrt as trt
+
+    TRT_LOGGER = trt.Logger()
+    builder = trt.Builder(TRT_LOGGER)
+    network = builder.create_network()
+    parser = trt.OnnxParser(network, TRT_LOGGER)
+    with open(onnx_file_path, 'rb') as model:
+        print('Beginning ONNX file parsing')
+        parser.parse(model.read())
+        print('Completed parsing of ONNX file')
+    builder.max_workspace_size = 1 << 30
+    builder.max_batch_size = 2
+    if builder.platform_has_fast_fp16:
+        builder.fp16_mode = True
+        print('Building an engine...')
+        engine = builder.build_cuda_engine(network)
+        context = engine.create_execution_context()
+        print("Completed creating Engine")
+        return engine, context
 
 def export_saved_model(model, im, file, dynamic,
                        tf_nms=False, agnostic_nms=False, topk_per_class=100, topk_all=100, iou_thres=0.45,
@@ -309,6 +331,8 @@ def run(data=ROOT / 'data/coco128.yaml',  # 'dataset.yaml path'
         export_onnx(model, im, file, opset, train, dynamic, simplify)
     if 'coreml' in include:
         export_coreml(model, im, file)
+    if 'tensorrt' in include:
+        export_engine(model, im, file)
 
     # TensorFlow Exports
     if any(tf_exports):
