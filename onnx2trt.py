@@ -8,21 +8,29 @@ TRT_LOGGER = trt.Logger()
 
 def build_engine(onnx_file_path):
     builder = trt.Builder(TRT_LOGGER)
-    network = builder.create_network()
+    explicit_batch = 2 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    network = builder.create_network(explicit_batch)
+    # network = builder.create_network()
     parser = trt.OnnxParser(network, TRT_LOGGER)
     with open(onnx_file_path, 'rb') as model:
+        if not parser.parse(model.read()):
+            for error in range(parser.num_errors):
+                print(parser.get_error(error))
         print('Beginning ONNX file parsing')
         parser.parse(model.read())
         print('Completed parsing of ONNX file')
     builder.max_workspace_size = 1 << 30
     builder.max_batch_size = 2
+
     if builder.platform_has_fast_fp16:
         builder.fp16_mode = True
-        print('Building an engine...')
-        engine = builder.build_cuda_engine(network)
-        context = engine.create_execution_context()
-        print("Completed creating Engine")
-        return engine, context
+    last_layer = network.get_layer(network.num_layers - 1)
+    network.mark_output(last_layer.get_output(0))
+    print('Building an engine...')
+    engine = builder.build_cuda_engine(network)
+    context = engine.create_execution_context()
+    print("Completed creating Engine")
+    return engine, context
 
 
 def main():
@@ -45,3 +53,5 @@ def main():
     # stream.synchronize()
     # output_data = torch.Tensor(host_output).reshape(engine.max_batch_size, output_shape[0])
     # postprocess(output_data)
+if __name__ == "__main__":
+   main()
